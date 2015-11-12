@@ -8,7 +8,7 @@ int main()
 	x = 5;
 	z = 6.2;
 
-	y = x mod z;
+	y = x % z;
 
 	return 0;
 }
