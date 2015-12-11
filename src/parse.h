@@ -4,12 +4,12 @@
 #ifndef _PARSE_H_
 #define _PARSE_H_
 
-enum base {INT_T=0, FLOAT_T, ARRAY_T};
+enum base {VOID_T, INT_T=0, FLOAT_T, ARRAY_T};
 
 typedef struct gen_t {
 	char *code;
 	int type;
-	char *name;
+	char *var;
 }gen_t;
 
 #endif

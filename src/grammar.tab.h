@@ -46,30 +46,30 @@ extern int yydebug;
   enum yytokentype
   {
     IDENTIFIER = 258,
-    CONSTANTI = 259,
-    CONSTANTF = 260,
+    CONSTANTF = 259,
+    CONSTANTI = 260,
     MAP = 261,
     REDUCE = 262,
     EXTERN = 263,
-    INC_OP = 264,
-    DEC_OP = 265,
-    LE_OP = 266,
-    GE_OP = 267,
-    EQ_OP = 268,
-    NE_OP = 269,
-    SUB_ASSIGN = 270,
-    MUL_ASSIGN = 271,
-    ADD_ASSIGN = 272,
-    TYPE_NAME = 273,
-    INT = 274,
-    FLOAT = 275,
-    VOID = 276,
-    IF = 277,
-    ELSE = 278,
-    WHILE = 279,
-    RETURN = 280,
-    FOR = 281,
-    DO = 282
+    DO = 264,
+    INC_OP = 265,
+    DEC_OP = 266,
+    LE_OP = 267,
+    GE_OP = 268,
+    EQ_OP = 269,
+    NE_OP = 270,
+    SUB_ASSIGN = 271,
+    MUL_ASSIGN = 272,
+    ADD_ASSIGN = 273,
+    TYPE_NAME = 274,
+    INT = 275,
+    FLOAT = 276,
+    VOID = 277,
+    IF = 278,
+    ELSE = 279,
+    WHILE = 280,
+    RETURN = 281,
+    FOR = 282
   };
 #endif
 
@@ -78,12 +78,12 @@ extern int yydebug;
 typedef union YYSTYPE YYSTYPE;
 union YYSTYPE
 {
-#line 29 "grammar.y" /* yacc.c:1909  */
+#line 30 "grammar.y" /* yacc.c:1909  */
 
   char *string;
   int n;
   float f;
-  gen_t t;
+  gen_t g;
 
 #line 89 "grammar.tab.h" /* yacc.c:1909  */
 };

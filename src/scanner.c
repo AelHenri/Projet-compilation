@@ -539,7 +539,7 @@ char *yytext;
 #line 1 "scanner.l"
 #line 2 "scanner.l"
 #include <stdio.h>
-#include "parse.h"
+#include "hachage.h"
 #include <string.h>
 #include "grammar.tab.h"
 void count();

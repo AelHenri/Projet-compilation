@@ -1,63 +1,76 @@
 %{
-    #include <stdio.h> 
-    #include "parse.h"
+    #include <stdio.h>
+    #include "hachage.h"
     extern int yylineno;
     int yylex ();
     int yyerror ();
 
-    char* newvar(){
-        char *str = NULL;
-        static int lastnum = 0;
-        lastnum++;
-        return str;
+    char *newvar() {
+        static int i=0;
+        char *s;
+        asprintf(&s,"%%x%d",i++);
+        return s;
     }
-
+    gen_t EMPTY= {"", INT_T, "" };
+    enum base basetype;
 %}
 
-%token <string> IDENTIFIER 
-%token <n> CONSTANTI 
+%token <string> IDENTIFIER
 %token <f> CONSTANTF 
-%token MAP REDUCE EXTERN
+%token <n> CONSTANTI 
+%token MAP REDUCE EXTERN DO
 %token INC_OP DEC_OP LE_OP GE_OP EQ_OP NE_OP
 %token SUB_ASSIGN MUL_ASSIGN ADD_ASSIGN
 %token TYPE_NAME
 %token INT FLOAT VOID
-%token IF ELSE WHILE RETURN FOR DO
-%type <t> primary_expression postfix_expression unary_expression multiplicative_expression additive_expression declarator
-
+%token IF ELSE WHILE RETURN FOR
+%type <g> primary_expression postfix_expression unary_expression multiplicative_expression additive_expression
+%type <g> declarator
 %start program
 %union {
   char *string;
   int n;
   float f;
-  gen_t t;
+  gen_t g;
 }
 %%
 
 primary_expression
-: IDENTIFIER 
-| CONSTANTI  {
-    $$.name = newvar(); 
-    $$.type = INT_T;
-    asprintf(&($$.code),"%s = add i32 0, %d\n", $$.name, $1);
+: IDENTIFIER {
+    gen_t g = findtab($1);
+    char *n = newvar();
+    if (g.type == INT_T){
+        $$.type = INT_T;
+        asprintf(&($$.code), "%s = load i32* %s\n",n,g.var);
+    }
+    else {
+        $$.type = FLOAT_T;
+        asprintf(&($$.code), "%s = load float* %s\n",n,g.var);
+    }
+
+} 
+| CONSTANTI { 
+    $$.var=newvar(); 
+    $$.type=INT_T;
+    asprintf(&($$.code), "%s = add i32 0, %d\n", $$.var,$1);
 }
-| CONSTANTF  {
-    $$.name = newvar();
-    $$.type = FLOAT_T;
-    asprintf(&($$.code),"%s = add i32 0, %d\n", $$.name, $1);
+| CONSTANTF { 
+    $$.var=newvar(); 
+    $$.type=FLOAT_T;
+    asprintf(&($$.code), "%s = fadd float 0, %f\n", $$.var,$1);
 }
-| '(' expression ')'
-| MAP '(' postfix_expression ',' postfix_expression ')'
-| REDUCE '(' postfix_expression ',' postfix_expression ')'
-| IDENTIFIER '(' ')'    
-| IDENTIFIER '(' argument_expression_list ')'   
-| IDENTIFIER INC_OP 
-| IDENTIFIER DEC_OP 
+| '(' expression ')' { $$ = EMPTY; } 
+| MAP '(' postfix_expression ',' postfix_expression ')' { $$ = EMPTY; } 
+| REDUCE '(' postfix_expression ',' postfix_expression ')' { $$ = EMPTY; } 
+| IDENTIFIER '(' ')' { $$ = EMPTY; } 
+| IDENTIFIER '(' argument_expression_list ')' { $$ = EMPTY; } 
+| IDENTIFIER INC_OP  { $$ = EMPTY; } 
+     | IDENTIFIER DEC_OP { $$ = EMPTY; }  
 ;
 
 postfix_expression
-: primary_expression
-| postfix_expression '[' expression ']'
+  : primary_expression { $$ = $1; }
+   | postfix_expression '[' expression ']' { $$ = $1; }
 ;
 
 argument_expression_list
@@ -66,10 +79,17 @@ argument_expression_list
 ;
 
 unary_expression
-: postfix_expression
-| INC_OP unary_expression
-| DEC_OP unary_expression
-| unary_operator unary_expression
+  : postfix_expression { $$ = $1; }
+   | INC_OP unary_expression { $$ = $2; }
+   | DEC_OP unary_expression { $$ = $2; }
+   | unary_operator unary_expression {   $$.var = newvar(); 
+  if ($2.type==INT_T) {
+  $$.type=INT_T;
+    asprintf(&($$.code), "%s %s = sub i32 0, %s\n", $2.code, $$.var,$2.var);
+ } else {
+  $$.type=FLOAT_T;
+    asprintf(&($$.code), "%s %s = fsub float 0, %s\n", $2.code, $$.var,$2.var);
+ } }
 ;
 
 unary_operator
@@ -77,31 +97,50 @@ unary_operator
 ;
 
 multiplicative_expression
-: unary_expression
-| multiplicative_expression '*' unary_expression {
-    $$.name = newvar();
-    asprintf($$.code, "%s\n%s\n%s = mul i32 %s, %s", $1.code, $3.code, $$.name, $1.name, $3.name);
-}
-| multiplicative_expression '/' unary_expression {
-    $$.name = newvar();
-    asprintf($$.code, "%s\n%s\n%s = sdiv i32 %s, %s", $1.code, $3.code, $$.name, $1.name, $3.name);
-}
+: unary_expression { $$ = $1; } 
+| multiplicative_expression '*' unary_expression { 
+  $$.var = newvar(); 
+  if ($1.type==INT_T && $3.type==INT_T) {
+  $$.type=INT_T;
+    asprintf(&($$.code), "%s%s%s = mul i32 %s, %s\n", $1.code, $3.code,$$.var,$1.var,$3.var);
+ } else {
+  $$.type=FLOAT_T;
+    asprintf(&($$.code), "%s%s%s = fmul float %s, %s\n", $1.code, $3.code,$$.var,$1.var,$3.var);
+ } }
+| multiplicative_expression '/' unary_expression { 
+  $$.var = newvar(); 
+  if ($1.type==INT_T && $3.type==INT_T) {
+  $$.type=INT_T;
+    asprintf(&($$.code), "%s%s%s = sdiv i32 %s, %s\n", $1.code, $3.code,$$.var,$1.var,$3.var);
+ } else {
+  $$.type=FLOAT_T;
+    asprintf(&($$.code), "%s%s%s = fdiv float %s, %s\n", $1.code, $3.code,$$.var,$1.var,$3.var);
+ } }
 ;
 
 additive_expression
-: multiplicative_expression
-| additive_expression '+' multiplicative_expression {
-    $$.name = newvar();
-    asprintf($$.code, "%s\n%s\n%s = add i32 %s, %s", $1.code, $3.code, $$.name, $1.name, $3.name);
-}
-| additive_expression '-' multiplicative_expression {
-    $$.name = newvar();
-    asprintf($$.code, "%s\n%s\n%s = sub i32 %s, %s", $1.code, $3.code, $$.name, $1.name, $3.name);
-}
+  : multiplicative_expression { $$ = $1; } 
+     | additive_expression '+' multiplicative_expression { 
+  $$.var = newvar(); 
+  if ($1.type==INT_T && $3.type==INT_T) {
+  $$.type=INT_T;
+    asprintf(&($$.code), "%s%s%s = add i32 %s, %s\n", $1.code, $3.code,$$.var,$1.var,$3.var);
+ } else {
+  $$.type=FLOAT_T;
+    asprintf(&($$.code), "%s%s%s = fadd float %s, %s\n", $1.code, $3.code,$$.var,$1.var,$3.var);
+ } 
+ }
+| additive_expression '-' multiplicative_expression { 
+  $$.var = newvar(); 
+  if ($1.type==INT_T && $3.type==INT_T) {
+    asprintf(&($$.code), "%s%s%s = sub i32 %s, %s\n", $1.code, $3.code,$$.var,$1.var,$3.var);
+ } else {
+    asprintf(&($$.code), "%s%s%s = fsub float %s, %s\n", $1.code, $3.code,$$.var,$1.var,$3.var);
+ } }
 ;
 
 comparison_expression
-: additive_expression
+  : additive_expression { printf("%s\n",$1.code); }
 | additive_expression '<' additive_expression
 | additive_expression '>' additive_expression
 | additive_expression LE_OP additive_expression
@@ -133,18 +172,27 @@ declarator_list
 ;
 
 type_name
-: VOID  
-| INT   
-| FLOAT
+  : VOID { basetype = VOID_T; }
+   | INT { basetype = INT_T; }
+   | FLOAT { basetype = FLOAT_T; }
 ;
 
 declarator
-: IDENTIFIER 
-| '(' declarator ')'
-| declarator '[' CONSTANTI ']'
-| declarator '[' ']'
-| declarator '(' parameter_list ')'
-| declarator '(' ')'
+  : IDENTIFIER {
+    $$.code = newvar();
+    addtab($1, basetype, $$.var);
+    if (basetype == INT_T) {
+        asprintf(&($$.code), "%s = alloca i32", $$.var);
+    }
+    else {
+        asprintf(&($$.code), "%s = alloca float", $$.var);
+    }
+  }           
+   | '(' declarator ')' { $$ = $2; }   
+   | declarator '[' CONSTANTI ']'
+   | declarator '[' ']'          
+   | declarator '(' parameter_list ')'
+   | declarator '(' ')'            
 ;
 
 parameter_list
@@ -153,7 +201,7 @@ parameter_list
 ;
 
 parameter_declaration
-: type_name declarator
+  : type_name declarator 
 ;
 
 statement
@@ -234,21 +282,22 @@ int yyerror (char *s) {
 
 
 int main (int argc, char *argv[]) {
+    init();
     FILE *input = NULL;
     if (argc==2) {
-	input = fopen (argv[1], "r");
-	file_name = strdup (argv[1]);
-	if (input) {
-	    yyin = input;
-	}
-	else {
-	  fprintf (stderr, "%s: Could not open %s\n", *argv, argv[1]);
-	    return 1;
-	}
+    input = fopen (argv[1], "r");
+    file_name = strdup (argv[1]);
+    if (input) {
+        yyin = input;
     }
     else {
-	fprintf (stderr, "%s: error: no input file\n", *argv);
-	return 1;
+      fprintf (stderr, "%s: Could not open %s\n", *argv, argv[1]);
+        return 1;
+    }
+    }
+    else {
+    fprintf (stderr, "%s: error: no input file\n", *argv);
+    return 1;
     }
     yyparse ();
     free (file_name);
