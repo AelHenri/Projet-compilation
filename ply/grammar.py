@@ -10,7 +10,7 @@ def newvar():
         newvar.counter = 0
     newvar.counter += 1
     s = "%x" + str(newvar.counter)
-    print s
+    #print s
     return s
 
 class Type          :pass
@@ -21,12 +21,19 @@ class ARRAY     (Type):pass
 
 basetype = Type()
 
+vars = {}
+
 # -------------- RULES ----------------
 
 ########################### primary_expression ###########################
 def p_primary_expression_1(p):
     '''primary_expression : IDENTIFIER'''
-    print(p[1])
+    p[0] = {}
+    p[0]['reg'] = newvar()
+    p[0]['type'] = p[1]['type']
+    if (p[1]['type'] == INT):
+        p[0]['code'] = p[0]['reg'] + " = load i32* " + p[1]['reg']
+
 
 def p_primary_expression_2(p):
     '''primary_expression : CONSTANTI'''
@@ -113,6 +120,7 @@ def p_additive_expression_3(p):
 ########################### comparison_expression ###########################
 def p_comparison_expression_1(p):
     '''comparison_expression : additive_expression'''
+    print p[1]['code']
 
 def p_comparison_expression_2(p):
     '''comparison_expression : additive_expression '<' additive_expression'''
@@ -186,13 +194,18 @@ def p_type_name_3(p):
 def p_declarator_1(p):
     '''declarator : IDENTIFIER'''
     p[0] = {}
-    p[0]['code'] = newvar()
+    p[0]['reg'] = newvar()
     p[0]['name'] = p[1]
     p[0]['type'] = basetype
-    print "Nom: " + str(p[0]['name']) + ", Type: " + p[0]['type'].__name__
+    
+    if (basetype == INT):
+        p[0]['code'] = p[0]['reg']+" = alloca i32"
+    elif (basetype == FLOAT):
+        p[0]['code'] = p[0]['reg']+" = alloca float"
 
 def p_declarator_2(p):
     '''declarator : '(' declarator ')' '''
+    p[0] = p[2]
 
 def p_declarator_3(p):
     '''declarator : declarator '[' CONSTANTI ']' '''

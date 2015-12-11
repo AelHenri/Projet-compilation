@@ -179,7 +179,7 @@ type_name
 
 declarator
   : IDENTIFIER {
-    $$.code = newvar();
+    $$.var = newvar();
     addtab($1, basetype, $$.var);
     if (basetype == INT_T) {
         asprintf(&($$.code), "%s = alloca i32", $$.var);
