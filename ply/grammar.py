@@ -5,7 +5,9 @@ import sys
 tokens = lexer.tokens
 start = 'program'
 
+
 def newvar():
+    # Fonction servant à générer un nouveau registre de la forme %xi, i étant incrémenté à chaque fois
     if not hasattr(newvar, 'counter'):
         newvar.counter = 0
     s = "%x" + str(newvar.counter)
@@ -13,27 +15,40 @@ def newvar():
     return s
 
 def newlabel():
+    # Même chose que pour les registres, mais pour les labels
     if not hasattr(newlabel, 'counter'):
         newlabel.counter = 0
     s = "label" + str(newlabel.counter)
     newlabel.counter += 1
     return s
 
+# Equivalent du enum pour les types
 class Type          :pass
 class INT       (Type):pass
 class FLOAT     (Type):pass
 class VOID      (Type):pass
 class ARRAY     (Type):pass
 
+# Initialisation de la variable globale pour connaitre le type de l'identifiant suivant
 basetype = Type()
 
+# Dictionnaire (équivalent de la hashtable)
+# Marche par clé, exemple : vars = {'x' : %x3} : le dictionnaire une entrée, dont la clé est 'x' (nom de la variable en C) et la valeur est %x3 (le nom du registre où est stocké la variable)
+# Pour y accéder, on tape vars['x']
 vars = {}
 
+
 def sitofp(reg):
+    # Fonction pour écrire le code pour convertir un int en float (marche à peu près, pas beaucoup testé)
     newReg = newvar()
     code = newReg + " = sitofp i32 " + reg +" to float\n"
     return [code, newReg]
 
+
+# On utilsie aussi des dictionnaires pour chaque règle. p[0] = {} initialise p[0] en un dictionnaire, et le minimum est d'y mettre un code :
+# p[0]['code'] = "machin truc"
+# Pour les variables, on a les clés 'code', 'reg' qui enregistre le registre où est stocké la variable, et 'type'.
+# Dans la première règle en dessous il y a l'entrée 'name', je sais plus exactement pourquoi mais c'est pour enregistrer le nom du registre d'origine (je crois, je reviendrai dessus plus tard).
 # -------------- RULES ----------------
 
 ########################### primary_expression ###########################
@@ -308,9 +323,9 @@ def p_expression_1(p):
         if (p[1]['type'] == INT):
             newReg = newvar()
             p1 = sitofp(p[1]['reg'])
-            p[0]['code'] = p1[0] + "store float " + p[3]['reg'] + ", float* " + p1[1] + "\n" + newReg + "= load float* " + p1[1] + "\n"
+            p[0]['code'] = p[3]['code'] + p1[0] + "store float " + p[3]['reg'] + ", float* " + p1[1] + "\n" + newReg + "= load float* " + p1[1] + "\n"
         else:
-            p[0]['code'] = "store float " + p[3]['reg'] + ", float* " + p[1]['name'] + "\n" + p[1]['code']
+            p[0]['code'] = p[3]['code'] + "store float " + p[3]['reg'] + ", float* " + p[1]['name'] + "\n" + p[1]['code']
 
 def p_expression_2(p):
     '''expression : comparison_expression'''
