@@ -1,13 +1,20 @@
 import ply.yacc as yacc
 import lexer
 import sys
+import struct
 
 tokens = lexer.tokens
 start = 'program'
 
+def callorder():
+    if not hasattr(callorder, 'counter'):
+        callorder.counter = 0
+    s = str(callorder.counter)
+    callorder.counter += 1
+    return s
 
 def newvar():
-    # Fonction servant à générer un nouveau registre de la forme %xi, i étant incrémenté à chaque fois
+    # Fonction servant a generer un nouveau registre de la forme %xi, i etant incremente a chaque fois
     if not hasattr(newvar, 'counter'):
         newvar.counter = 0
     s = "%x" + str(newvar.counter)
@@ -15,7 +22,7 @@ def newvar():
     return s
 
 def newlabel():
-    # Même chose que pour les registres, mais pour les labels
+    # Meme chose que pour les registres, mais pour les labels
     if not hasattr(newlabel, 'counter'):
         newlabel.counter = 0
     s = "label" + str(newlabel.counter)
@@ -28,27 +35,53 @@ class INT       (Type):pass
 class FLOAT     (Type):pass
 class VOID      (Type):pass
 class ARRAY     (Type):pass
+class ARRAYINT  (Type):pass
+class ARRAYFLOAT(Type):pass
 
 # Initialisation de la variable globale pour connaitre le type de l'identifiant suivant
 basetype = Type()
 
-# Dictionnaire (équivalent de la hashtable)
-# Marche par clé, exemple : vars = {'x' : %x3} : le dictionnaire une entrée, dont la clé est 'x' (nom de la variable en C) et la valeur est %x3 (le nom du registre où est stocké la variable)
-# Pour y accéder, on tape vars['x']
+# Dictionnaire (equivalent de la hashtable)
+# Marche par cle, exemple : vars = {'x' : %x3} : le dictionnaire une entree, dont la cle est 'x' (nom de la variable en C) et la valeur est %x3 (le nom du registre ou est stocke la variable)
+# Pour y acceder, on tape vars['x']
 vars = {}
 
+def truncFloat(value):
+    """
+    Truncate to single-precision float.
+    """
+    return struct.unpack('f', struct.pack('f', value))[0]
+
+def hexFloat(value, packfmt, unpackfmt, numdigits):
+    raw = struct.pack(packfmt, float(value))
+    intrep = struct.unpack(unpackfmt, raw)[0]
+    out = '{{0:#{0}x}}'.format(numdigits).format(intrep)
+    return out
+
+def hexDouble(value):
+    """
+    Format *value* as a hexadecimal string of its IEEE double precision
+    representation.
+    """
+    return hexFloat(value, 'd', 'Q', 16)
 
 def sitofp(reg):
-    # Fonction pour écrire le code pour convertir un int en float (marche à peu près, pas beaucoup testé)
+    # Fonction pour ecrire le code pour convertir un int en float (marche a peu pres, pas beaucoup teste)
     newReg = newvar()
     code = newReg + " = sitofp i32 " + reg +" to float\n"
     return [code, newReg]
 
+def fptosi(reg):
+    # Fonction pour ecrire le code pour convertir un int en float (marche a peu pres, pas beaucoup teste)
+    newReg = newvar()
+    code = newReg + " = fptosi float " + reg +" to i32\n"
+    return [code, newReg]
 
-# On utilsie aussi des dictionnaires pour chaque règle. p[0] = {} initialise p[0] en un dictionnaire, et le minimum est d'y mettre un code :
+
+# On utilise aussi des dictionnaires pour chaque regle. p[0] = {} initialise p[0] en un dictionnaire, et le minimum est d'y mettre un code :
 # p[0]['code'] = "machin truc"
-# Pour les variables, on a les clés 'code', 'reg' qui enregistre le registre où est stocké la variable, et 'type'.
-# Dans la première règle en dessous il y a l'entrée 'name', je sais plus exactement pourquoi mais c'est pour enregistrer le nom du registre d'origine (je crois, je reviendrai dessus plus tard).
+# Pour les variables, on a les cles 'code', 'reg' qui enregistre le registre ou est stocke la variable, et 'type'.
+# Dans la premiere regle en dessous il y a l'entree 'name', je sais plus exactement pourquoi mais c'est pour enregistrer le nom du registre d'origine (je crois, je reviendrai dessus plus tard).
 # -------------- RULES ----------------
 
 ########################### primary_expression ###########################
@@ -57,13 +90,29 @@ def p_primary_expression_1(p):
     p[0] = {}
     p[0]['reg'] = newvar()
     p_id = vars[p[1]]
-    p[0]['name'] = p_id['reg']
+    p[0]['idReg'] = p_id['reg']
     if (p_id['type'] == INT):
         p[0]['type'] = INT
         p[0]['code'] = p[0]['reg'] + " = load i32* " + p_id['reg'] + "\n"
-    else:
+    elif (p_id['type'] == FLOAT):
         p[0]['type'] = FLOAT
         p[0]['code'] = p[0]['reg'] + " = load float* " + p_id['reg'] + "\n"
+    elif (p_id['type'] == ARRAYINT):
+        tmp = newvar()
+        p[0]['type'] = ARRAYINT
+        p[0]['size'] = p_id['size']
+        p[0]['code'] = tmp + " = getelementptr inbounds [" +p_id['size']+ " x i32]* " +p_id['reg'] +", i64 0, i32 0\n" ##get pointer
+        p[0]['code'] = p[0]['code'] + p[0]['reg'] + " = load i32 " + tmp +"\n"  ##dereference pointer
+    elif (p_id['type'] == ARRAYFLOAT):
+        tmp = newvar()
+        p[0]['size'] = p_id['size']
+        p[0]['type'] = ARRAYFLOAT
+        p[0]['code'] = tmp + " = getelementptr inbounds [" +p_id['size']+ " x float]* " +p_id['reg'] +", i64 0, float 0\n" ##get pointer
+        p[0]['code'] = p[0]['code'] + p[0]['reg'] + " = load float* " + tmp +"\n"
+    else:
+        p_error("Undefined type : not int float ARRAYINT or ARRAYFLOAT")
+    tmp = callorder()
+    sys.stdout.write(tmp+"  prim_exp => IDENTIFIER \n")
 
 def p_primary_expression_2(p):
     '''primary_expression : CONSTANTI'''
@@ -78,7 +127,8 @@ def p_primary_expression_3(p):
     p[0] = {}
     p[0]['reg'] = newvar()
     p[0]['type'] = FLOAT
-    p[0]['code'] = p[0]['reg'] + " = fadd float 0.0, " + p[1] + "\n"
+    floatCF = hexDouble(truncFloat(float(p[1])))
+    p[0]['code'] = p[0]['reg'] + " = fadd float 0.0, " + floatCF + "\n"
     p[0]['val'] = p[1]
 
 def p_primary_expression_4(p):
@@ -116,7 +166,24 @@ def p_postfix_expression_1(p):
 
 def p_postfix_expression_2(p):
     '''postfix_expression : postfix_expression '[' expression ']' '''
-    p[0] = p[1]
+    p[0] = {} 
+    p[0]['reg'] = newvar();
+    p[0]['idReg'] = p[0]['reg']
+    if (p[1]['type'] == ARRAYINT):
+        if ((p[3]['type'] == INT) and (p[3]['val'] >= 0)):
+            p[0]['code'] = p[3]['code'] + p[0]['reg'] +" = getelementptr inbounds [" + p[1]['size'] + " x i32]* " + p[1]['idReg'] +", i64 0, i32 "+ p[3]['reg'] +"\n"
+            p[0]['type'] = INT
+        else:
+            p_error("Error at line " + str(p.lineno)+" : array index should be POSITIVE INT")
+    elif (p[1]['type'] == ARRAYFLOAT):
+        sys.stdout.write("checkpoing : ARRAYFLOAT")        
+        if ((p[3]['type'] == INT) and p[3]['val'] >= 0):
+            p[0]['code'] = p[0]['reg'] +" = getelementptr inbounds [" + p[1]['size'] + " x float]* " + p[1]['idReg'] +", i64 0, float "+ p[3]['val']+"\n"
+            p[0]['type'] = FLOAT
+        else:
+            p_error("TypeError at line " + str(p.lineno) + " : array index should be POSITIVE INT")
+    else:
+        p_error("TypeError at line " + str(p.lineno)+ " : expected ARRAYINT or ARRAYFLOAT got"+ str(p[1]['type']) + "instead")
 
 ########################### argument_expression_list ###########################
 def p_argument_expression_list_1(p):
@@ -142,7 +209,7 @@ def p_unary_expression_3(p):
 def p_unary_expression_4(p):
     '''unary_expression : unary_operator unary_expression'''
     p[0] = {}
-    p[0]['var'] = newvar()
+    p[0]['reg'] = newvar()
     if (p[2]['type'] == INT):
         p[0]['type'] = INT
         p[0]['code'] = p[2]['code'] + " " + p[0]['reg'] + " = sub i32 0, " + p[2]['reg'] + "\n"
@@ -315,17 +382,31 @@ def p_comparison_expression_7(p):
 def p_expression_1(p):
     '''expression : unary_expression assignment_operator comparison_expression'''
     p[0] = {}
-    if p[3]['type'] == INT:
+    p[0]['reg'] = p[1]['reg']
+    if ((p[1]['type'] == INT) and (p[3]['type'] == INT)) :
         p[0]['type'] = INT
-        p[0]['code'] = p[3]['code'] + "store i32 " + p[3]['reg'] + ", i32* " + p[1]['name'] + "\n"
-    elif p[3]['type'] == FLOAT:
-        p[0]['type'] = FLOAT
-        if (p[1]['type'] == INT):
-            newReg = newvar()
-            p1 = sitofp(p[1]['reg'])
-            p[0]['code'] = p[3]['code'] + p1[0] + "store float " + p[3]['reg'] + ", float* " + p1[1] + "\n" + newReg + "= load float* " + p1[1] + "\n"
-        else:
-            p[0]['code'] = p[3]['code'] + "store float " + p[3]['reg'] + ", float* " + p[1]['name'] + "\n" + p[1]['code']
+        p[0]['code'] = p[1]['code'] + p[3]['code'] + "store i32 " + p[3]['reg'] + ", i32* " + p[1]['idReg'] + "\n"
+    elif (p[1]['type'] == FLOAT):
+        if (p[3]['type'] == FLOAT):
+            p[0]['type'] = FLOAT
+            p[0]['code'] = p[1]['code'] + p[3]['code'] + "store float " + p[3]['reg'] + ", float* " + p[1]['idReg'] + "\n"
+        elif (p[3]['type'] == INT):
+            tmp = sitofp(p[3]['reg'])
+            p[0]['code'] = p[1]['code'] + p[3]['code']+ tmp[0] + "store float " + tmp[1] + ", float* " + p[1]['idReg'] + "\n"
+    # p[0] = {}
+    # p[0]['reg'] = p[1]['reg']
+    # if p[3]['type'] == INT:
+    #     p[0]['type'] = INT
+    #     p[0]['code'] = p[1]['code'] + p[3]['code'] + "store i32 " + p[3]['reg'] + ", i32* " + p[1]['idReg'] +"\n"
+    #     #p[0]['code'] = p[3]['code'] + "store i32 " + p[3]['reg'] + ", i32* " + p[1]['idReg'] + "\n" + p[1]['code'] +"\n"
+    # elif p[3]['type'] == FLOAT:
+    #     p[0]['type'] = FLOAT
+    #     if (p[1]['type'] == INT):
+    #         newReg = newvar()
+    #         p1 = sitofp(p[1]['reg'])
+    #         p[0]['code'] = p[3]['code'] + p1[0] + "store float " + p[3]['reg'] + ", float* " + p1[1] + "\n" + newReg + "= load float* " + p1[1] + "\n"
+    #     else:
+    #         p[0]['code'] = p[3]['code'] + "store float " + p[3]['reg'] + ", float* " + p[1]['idReg'] + "\n" + p[1]['code']
 
 def p_expression_2(p):
     '''expression : comparison_expression'''
@@ -405,6 +486,17 @@ def p_declarator_2(p):
 
 def p_declarator_3(p):
     '''declarator : declarator '[' CONSTANTI ']' '''
+    p[0] = {}
+    p[0]['reg'] = newvar()
+    p[0]['size'] = p[3]
+    if (p[1]['type'] == INT):
+        p[0]['code'] = p[0]['reg']+" = alloca ["+ p[3] +" x i32]\n"
+        p[0]['type'] = ARRAYINT
+    elif (p[1]['type'] == FLOAT):
+        p[0]['code'] = p[0]['reg']+" = alloca ["+ p[3] +" x float]\n"
+        p[0]['type'] = ARRAYFLOAT
+
+    vars[p[1]['name']] = p[0]
 
 def p_declarator_4(p):
     '''declarator : declarator '[' ']' '''
@@ -514,6 +606,33 @@ def p_selection_statement_2(p):
 
 def p_selection_statement_3(p):
     '''selection_statement : FOR '(' expression_statement expression_statement expression ')' statement'''
+    p[0] = {}
+    entryLabel = newlabel()
+    loopLabel = newlabel()
+    endLabel = newlabel()
+
+    # TODO : VERIFICATION SUR LES TYPES DES EXPRESSIONS
+    if (p[3]['code'] != "\n" and p[4]['code'] != "\n"):
+
+        i = newvar()
+        nextvar = p[3]['reg']
+
+        # Phi node
+        phiNode = i + " = phi i32 [" + p[3]['reg'] + ", %" + entryLabel + " ], [ " + nextvar + ", %" + loopLabel + " ]" + "\n"
+
+        # Incrementation
+        incCode = p[5]['code']
+        #incCode = nextvar + " = add i32 " + i +", " + p[5]['reg'] + "\n"
+
+        # Corps de la boucle
+        loopBody = p[7]['code']
+
+        # Terminaison de la boucle
+        terminationCode = p[4]['code'] + "br i1 " + p[4]['reg'] + ", label %" + loopLabel + ", label %" + endLabel + "\n" 
+        print p[5]
+
+
+    p[0]['code'] =p[3]['code'] + "br label %"+ entryLabel + "\n" + entryLabel + ":\nbr label %" + loopLabel + "\n" + loopLabel +":\n" + phiNode + loopBody + incCode + terminationCode + endLabel + ":\n"
 
 ########################### iteration_statement ###########################
 def p_iteration_statement_1(p):
@@ -538,16 +657,21 @@ def p_jump_statement_2(p):
 ########################### program ###########################
 def p_program_1(p):
     '''program : external_declaration'''
+    p[0] = p[1]
 
 def p_program_2(p):
     '''program : program external_declaration'''
+    p[0] = {}
+    p[0]['code'] = p[1]['code'] + p[2]['code']
 
 ########################### external_declaration ###########################
 def p_external_declaration_1(p):
     '''external_declaration : function_definition'''
+    p[0] = p[1]
 
 def p_external_declaration_2(p):
     '''external_declaration : declaration'''
+    p[0] = p[1]
 
 ########################### function_definition ###########################
 def p_function_definition_1(p):
