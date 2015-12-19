@@ -30,7 +30,7 @@ def newlabel():
     return s
 
 # Equivalent du enum pour les types
-class Type          :pass
+class Type      (object):pass
 class INT       (Type):pass
 class FLOAT     (Type):pass
 class VOID      (Type):pass
@@ -45,6 +45,8 @@ basetype = Type()
 # Marche par cle, exemple : vars = {'x' : %x3} : le dictionnaire une entree, dont la cle est 'x' (nom de la variable en C) et la valeur est %x3 (le nom du registre ou est stocke la variable)
 # Pour y acceder, on tape vars['x']
 vars = {}
+
+mainCode = ""
 
 def truncFloat(value):
     """
@@ -72,7 +74,6 @@ def sitofp(reg):
     return [code, newReg]
 
 def fptosi(reg):
-    # Fonction pour ecrire le code pour convertir un int en float (marche a peu pres, pas beaucoup teste)
     newReg = newvar()
     code = newReg + " = fptosi float " + reg +" to i32\n"
     return [code, newReg]
@@ -110,9 +111,7 @@ def p_primary_expression_1(p):
         p[0]['code'] = tmp + " = getelementptr inbounds [" +p_id['size']+ " x float]* " +p_id['reg'] +", i64 0, float 0\n" ##get pointer
         p[0]['code'] = p[0]['code'] + p[0]['reg'] + " = load float* " + tmp +"\n"
     else:
-        p_error("Undefined type : not int float ARRAYINT or ARRAYFLOAT")
-    tmp = callorder()
-    sys.stdout.write(tmp+"  prim_exp => IDENTIFIER \n")
+        p_error("Undefined type : not int float ARRAYINT or ARRAYFLOAT" + str(p_id))
 
 def p_primary_expression_2(p):
     '''primary_expression : CONSTANTI'''
@@ -145,11 +144,61 @@ def p_primary_expression_6(p):
 
 def p_primary_expression_7(p):
     '''primary_expression : IDENTIFIER '(' ')' '''
-    p[0] = {'type': INT}
+    p[0] = {}
+    p[0]['reg'] = newvar()
+    p_id = vars[p[1]]
+    if (p_id['type'] == VOID):
+        p[0]['type'] = VOID
+        p[0]['code'] = "call void @" + p_id['name'] + "()\n"
+    elif (p_id['type'] == INT):
+        p[0]['type'] = INT
+        p[0]['code'] = p[0]['reg'] + " = call i32 @" + p_id['name'] + "()\n"
+    elif (p_id['type'] == FLOAT):
+        p[0]['type'] = FLOAT
+        p[0]['code'] = p[0]['reg'] + " = call float @" + p_id['name'] + "()\n"
 
 def p_primary_expression_8(p):
     '''primary_expression : IDENTIFIER '(' argument_expression_list ')' '''
-    p[0] = {'type': INT}
+    p[0] = {}
+    p[0]['reg'] = newvar()
+    p_id = vars[p[1]]
+    argType = ""
+    argCode = ""
+    argSize = None
+
+    if p_id['arguments'] != p[3]['number']:
+        print("Wrong number of arguments, expected " + str(p_id['arguments']) + ", had " + str(p[3]['number']) + " in function " + p_id['name'] + " line " + str(p.lineno(1)))
+        raise SyntaxError
+    else:
+        argSize = p_id['arguments']
+
+        for i in range(0, argSize):
+            if p_id['argTypes'][i] != p[3]['type'][i]:
+                print("Wrong "+ str(i) +"th argument type, expected " + str(p_id['argTypes'][i]) + ", got " + str(p[3]['type'][i]) + " instead "  + "in function " + p_id['name'] + " line " + str(p.lineno(1)))
+                raise SyntaxError
+            elif p[3]['type'][i] == INT:
+                argType = "i32"
+            elif p[3]['type'][i] == FLOAT:
+                argType = "float"
+            elif p[3]['type'][i] == VOID:
+                argType = "void"
+
+            argCode = argCode + argType + " " + p[3]['reg'][i]
+            if (i != argSize-1):
+                argCode = argCode + ", "
+
+    if (p_id['type'] == VOID):
+        p[0]['type'] = VOID
+        p[0]['code'] = p[3]['code'] + "call i32 @" + p_id['name'] + "(" + argCode + ")\n" 
+
+    elif (p_id['type'] == INT):
+        p[0]['type'] = INT
+        p[0]['code'] = p[3]['code'] + p[0]['reg'] + " = call i32 @" + p_id['name'] + "(" + argCode + ")\n" 
+
+    elif (p_id['type'] == FLOAT):
+        p[0]['type'] = FLOAT
+        p[0]['code'] = p[3]['code'] + p[0]['reg'] + " = call float @" + p_id['name'] + "(" + argCode + ")\n" 
+
 
 def p_primary_expression_9(p):
     '''primary_expression : IDENTIFIER INC_OP'''
@@ -174,24 +223,36 @@ def p_postfix_expression_2(p):
             p[0]['code'] = p[3]['code'] + p[0]['reg'] +" = getelementptr inbounds [" + p[1]['size'] + " x i32]* " + p[1]['idReg'] +", i64 0, i32 "+ p[3]['reg'] +"\n"
             p[0]['type'] = INT
         else:
-            p_error("Error at line " + str(p.lineno)+" : array index should be POSITIVE INT")
-    elif (p[1]['type'] == ARRAYFLOAT):
-        sys.stdout.write("checkpoing : ARRAYFLOAT")        
+            print("Error at line " + str(p.lineno(1))+" : array index should be POSITIVE INT")
+            raise SyntaxError
+    elif (p[1]['type'] == ARRAYFLOAT):      
         if ((p[3]['type'] == INT) and p[3]['val'] >= 0):
             p[0]['code'] = p[0]['reg'] +" = getelementptr inbounds [" + p[1]['size'] + " x float]* " + p[1]['idReg'] +", i64 0, float "+ p[3]['val']+"\n"
             p[0]['type'] = FLOAT
         else:
-            p_error("TypeError at line " + str(p.lineno) + " : array index should be POSITIVE INT")
+            print("TypeError at line " + str(p.lineno(1)) + " : array index should be POSITIVE INT")
+            raise SyntaxError
     else:
-        p_error("TypeError at line " + str(p.lineno)+ " : expected ARRAYINT or ARRAYFLOAT got"+ str(p[1]['type']) + "instead")
+        print("TypeError at line " + str(p.lineno(1))+ " : expected ARRAYINT or ARRAYFLOAT got"+ str(p[1]['type']) + "instead")
+        raise SyntaxError
 
 ########################### argument_expression_list ###########################
 def p_argument_expression_list_1(p):
     '''argument_expression_list : expression'''
     p[0] = p[1]
+    p[0]['number'] = 1
+    p[0]['reg'] = [p[1]['reg']]
+    p[0]['type'] = [p[1]['type']]
 
 def p_argument_expression_list_2(p):
     '''argument_expression_list : argument_expression_list ',' expression'''
+    p[0] = {}
+    p[0]['code'] = p[1]['code'] + p[3]['code']
+    p[0]['number'] = p[1]['number'] + 1
+    p[0]['reg'] = p[1]['reg']
+    p[0]['reg'].append(p[3]['reg'])
+    p[0]['type'] = p[1]['type']
+    p[0]['type'].append(p[3]['type'])
 
 ########################### unary_expression ###########################
 def p_unary_expression_1(p):
@@ -489,6 +550,7 @@ def p_declarator_3(p):
     p[0] = {}
     p[0]['reg'] = newvar()
     p[0]['size'] = p[3]
+    p[0]['name'] = p[1]['name']
     if (p[1]['type'] == INT):
         p[0]['code'] = p[0]['reg']+" = alloca ["+ p[3] +" x i32]\n"
         p[0]['type'] = ARRAYINT
@@ -503,21 +565,71 @@ def p_declarator_4(p):
 
 def p_declarator_5(p):
     '''declarator : declarator '(' parameter_list ')' '''
+    p[0] = {}
+    p[0]['reg'] = p[1]['reg']
+    p[0]['name'] = p[1]['name']
+    p[0]['type'] = p[1]['type']
+    p[0]['arguments'] = p[3]['number']
+    p[0]['argTypes'] = p[3]['type']
+    p[0]['declarationCode'] = p[3]['declarationCode']
+    if (p[1]['type'] == INT):
+        p[0]['code'] = "define i32 @" + p[1]['name'] + "(" + p[3]['code'] + ")"
+    elif (p[1]['type'] == FLOAT):
+        p[0]['code'] = "define float @" + p[1]['name'] + "(" + p[3]['code'] + ")"
+    elif (p[1]['type'] == INT):
+        p[0]['code'] = "define void @" + p[1]['name'] + "(" + p[3]['code'] + ")"
+
+    vars[p[1]['name']] = p[0]
 
 def p_declarator_6(p):
     '''declarator : declarator '(' ')' '''
-    p[0] = p[1]
+    p[0] = {}
+    p[0]['reg'] = p[1]['reg']
+    p[0]['name'] = p[1]['name']
+    p[0]['type'] = p[1]['type']
+    p[0]['declarationCode'] = ""
+    if (p[1]['type'] == INT):
+        p[0]['code'] = "define i32 @" + p[1]['name'] + "()\n"
+    elif (p[1]['type'] == FLOAT):
+        p[0]['code'] = "define float @" + p[1]['name'] + "()\n"
+    elif (p[1]['type'] == VOID):
+        p[0]['code'] = "define void @" + p[1]['name'] + "()\n"
+
+    vars[p[1]['name']] = p[0]
 
 ########################### parameter_list ###########################
 def p_parameter_list_1(p):
     '''parameter_list : parameter_declaration'''
+    p[0] = {}
+    p[0]['code'] = p[1]['code']
+    p[0]['number'] = 1
+    p[0]['type'] = [p[1]['type']]
+    p[0]['declarationCode'] = p[1]['declarationCode']
 
 def p_parameter_list_2(p):
     '''parameter_list : parameter_list ',' parameter_declaration'''
+    p[0] = {}
+    p[0]['code'] = p[1]['code'] + ", " + p[3]['code']
+    p[0]['number'] = p[1]['number'] + 1 
+    p[0]['type'] = p[1]['type']
+    p[0]['type'].append(p[3]['type'])
+    p[0]['declarationCode'] = p[1]['declarationCode'] + p[3]['declarationCode']
 
 ########################### parameter_declaration ###########################
 def p_parameter_declaration_1(p):
     '''parameter_declaration : type_name declarator'''
+    p[0] = {}
+    p[0]['reg'] = newvar()
+    p[0]['type'] = p[1]['type']
+    p[0]['name'] = p[2]['name']
+    if (p[1]['type'] == INT):
+        p[0]['code'] = "i32 " + p[0]['reg']
+        p[0]['declarationCode'] = p[2]['code'] + "store i32 " + p[0]['reg'] + ", i32* " + p[2]['reg'] + "\n"
+    elif (p[1]['type'] == FLOAT):
+        p[0]['code'] = "float " + p[0]['reg']
+        p[0]['declarationCode'] = p[2]['code'] + "store float " + p[0]['reg'] + ", float* " + p[2]['reg'] + "\n"
+
+
 
 ########################### statement ###########################
 def p_statement_1(p):
@@ -544,7 +656,7 @@ def p_statement_5(p):
 def p_compound_statement_1(p):
     '''compound_statement : '{' '}' '''
     p[0] = {}
-    #p[0]['code'] = "{\n\n}"
+    p[0]['code'] = "\n"
 
 def p_compound_statement_2(p):
     '''compound_statement : '{' statement_list '}' '''
@@ -622,7 +734,6 @@ def p_selection_statement_3(p):
 
         # Incrementation
         incCode = p[5]['code']
-        #incCode = nextvar + " = add i32 " + i +", " + p[5]['reg'] + "\n"
 
         # Corps de la boucle
         loopBody = p[7]['code']
@@ -632,14 +743,45 @@ def p_selection_statement_3(p):
         print p[5]
 
 
-    p[0]['code'] =p[3]['code'] + "br label %"+ entryLabel + "\n" + entryLabel + ":\nbr label %" + loopLabel + "\n" + loopLabel +":\n" + phiNode + loopBody + incCode + terminationCode + endLabel + ":\n"
+    p[0]['code'] = p[3]['code'] + "br label %"+ entryLabel + "\n" + entryLabel + ":\nbr label %" + loopLabel + "\n" + loopLabel +":\n" + phiNode + loopBody + incCode + terminationCode + endLabel + ":\n"
 
 ########################### iteration_statement ###########################
 def p_iteration_statement_1(p):
     '''iteration_statement : WHILE '(' expression ')' statement'''
+    p[0] = {}
+    conditionLabel = newlabel()
+    loopLabel = newlabel()
+    endLabel = newlabel()
+
+    # TODO : VERIFICATION SUR LES TYPES DES EXPRESSIONS
+
+    # Corps de la boucle
+    loopBody = p[5]['code'] + "br label %" + conditionLabel + "\n"
+
+    # Terminaison de la boucle
+    terminationCode = p[3]['code'] + "br i1 " + p[3]['reg'] + ", label %" + loopLabel + ", label %" + endLabel + "\n"
+
+    p[0]['code'] = "br label %" + conditionLabel + "\n" + conditionLabel + ":\n" + terminationCode + loopLabel + ":\n" + loopBody + endLabel + ":\n"
+
+
 
 def p_iteration_statement_2(p):
     '''iteration_statement : DO statement WHILE '(' expression ')' ';' '''
+    p[0] = {}
+    conditionLabel = newlabel()
+    loopLabel = newlabel()
+    endLabel = newlabel()
+
+    # TODO : VERIFICATION SUR LES TYPES DES EXPRESSIONS
+
+    # Corps de la boucle
+    loopBody = p[2]['code'] + "br label %" + conditionLabel + "\n"
+
+    # Terminaison de la boucle
+    terminationCode = p[5]['code'] + "br i1 " + p[5]['reg'] + ", label %" + loopLabel + ", label %" + endLabel + "\n"
+
+    p[0]['code'] = "br label %" + loopLabel + "\n" + loopLabel + ":\n" + loopBody + conditionLabel + ":\n" + terminationCode + endLabel + ":\n"
+
 
 ########################### jump_statement ###########################
 def p_jump_statement_1(p):
@@ -663,6 +805,8 @@ def p_program_2(p):
     '''program : program external_declaration'''
     p[0] = {}
     p[0]['code'] = p[1]['code'] + p[2]['code']
+    global mainCode
+    mainCode = p[0]['code']
 
 ########################### external_declaration ###########################
 def p_external_declaration_1(p):
@@ -677,19 +821,39 @@ def p_external_declaration_2(p):
 def p_function_definition_1(p):
     '''function_definition : type_name declarator compound_statement'''
     p[0] = {}
-    if p[1]['type'] == INT:
-        p[0]['type'] = p[1]['type']
-        p[0]['code'] = "define i32 @" + p[2]['name'] + "() {\n" + p[3]['code'] + "\n}"
-    print p[0]['code']
+    p[0]['code'] = p[2]['code'] + "{\n" + p[2]['declarationCode'] + p[3]['code'] + "\n}\n"
+    if p[1]['type'] == VOID:
+        p[0]['code'] = p[2]['code'] + "{\n" + p[2]['declarationCode'] + p[3]['code'] + "ret void\n}\n"
 
 def p_error(p):
-    print "Error line " + str(p.lineno) + ":" + str(p)
+    print "Syntax error line %d" % p.lineno
 
 if __name__ == '__main__':
+    import os
+    import subprocess
+
     parser = yacc.yacc()
     if len(sys.argv) > 1 :
         filename = sys.argv[1]
+        baseName = os.path.splitext(filename)[0]
         with open(filename, 'r') as f:
             parser.parse(f.read())
+
+        targetName = baseName + ".ll"
+        targetFile = open(targetName, 'w')
+        targetFile.truncate()
+
+        targetFile.write(mainCode)
+
+        targetFile.close()
+
+        command1 = "llc "+ baseName +".ll"
+        command2 = "gcc " + baseName + ".o " + " -c " + baseName +".s | gcc -o " + baseName
+        os.system(command1)
+        os.system(command2)
+
+        #print mainCode
+
     else :
         print("Usage: ./{0} <file.c>".format(sys.argv[0]))
+
