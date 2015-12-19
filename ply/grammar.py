@@ -90,7 +90,11 @@ def p_primary_expression_1(p):
     '''primary_expression : IDENTIFIER'''
     p[0] = {}
     p[0]['reg'] = newvar()
-    p_id = vars[p[1]]
+    if p[1] in vars:
+        p_id = vars[p[1]]
+    else:
+        print "Undefined variable '" + str(p[1]) + "' line " + str(p.lineno(1))
+        raise SyntaxError
     p[0]['idReg'] = p_id['reg']
     if (p_id['type'] == INT):
         p[0]['type'] = INT
@@ -102,16 +106,32 @@ def p_primary_expression_1(p):
         tmp = newvar()
         p[0]['type'] = ARRAYINT
         p[0]['size'] = p_id['size']
-        p[0]['code'] = tmp + " = getelementptr inbounds [" +p_id['size']+ " x i32]* " +p_id['reg'] +", i64 0, i32 0\n" ##get pointer
-        p[0]['code'] = p[0]['code'] + p[0]['reg'] + " = load i32 " + tmp +"\n"  ##dereference pointer
+        if (p[0]['size'] > 0):
+            p[0]['code'] = tmp + " = getelementptr inbounds [" +p_id['size']+ " x i32]* " +p_id['reg'] +", i64 0, i32 0\n" ##get pointer
+            p[0]['code'] = p[0]['code'] + p[0]['reg'] + " = load i32 " + tmp +"\n"  ##dereference pointer
+        elif (p[0]['size'] == 0):
+            p[0]['code'] = tmp + " = getelementptr i32* " +p_id['reg'] +", i64 0, i32 0\n" ##get pointer
+            p[0]['code'] = p[0]['code'] + p[0]['reg'] + " = load i32 " + tmp +"\n"  ##dereference pointer
+        else:
+            print("Error : size of array is negative.\n")
+            raise SyntaxError
+
     elif (p_id['type'] == ARRAYFLOAT):
         tmp = newvar()
-        p[0]['size'] = p_id['size']
         p[0]['type'] = ARRAYFLOAT
-        p[0]['code'] = tmp + " = getelementptr inbounds [" +p_id['size']+ " x float]* " +p_id['reg'] +", i64 0, float 0\n" ##get pointer
-        p[0]['code'] = p[0]['code'] + p[0]['reg'] + " = load float* " + tmp +"\n"
+        p[0]['size'] = p_id['size']
+        if (p[0]['size'] > 0):
+            p[0]['code'] = tmp + " = getelementptr inbounds [" +p_id['size']+ " x float]* " +p_id['reg'] +", i64 0, float 0\n" ##get pointer
+            p[0]['code'] = p[0]['code'] + p[0]['reg'] + " = load float* " + tmp +"\n"  ##dereference pointer
+        elif (p[0]['size'] == 0):
+            p[0]['code'] = tmp + " = getelementptr float* " +p_id['reg'] +", i64 0, float 0\n" ##get pointer
+            p[0]['code'] = p[0]['code'] + p[0]['reg'] + " = load i32 " + tmp +"\n"  ##dereference pointer
+        else:
+            print("Error size of array is negative.")
+            raise SyntaxError
     else:
-        p_error("Undefined type : not int float ARRAYINT or ARRAYFLOAT" + str(p_id))
+        print("Error : Undefined type : not int float ARRAYINT or ARRAYFLOAT")
+        raise SyntaxError
 
 def p_primary_expression_2(p):
     '''primary_expression : CONSTANTI'''
@@ -136,11 +156,11 @@ def p_primary_expression_4(p):
 
 def p_primary_expression_5(p):
     '''primary_expression : MAP '(' postfix_expression ',' postfix_expression ')' '''
-    p[0] = {'type': INT}
+    p[0] = {}
 
 def p_primary_expression_6(p):
     '''primary_expression : REDUCE '(' postfix_expression ',' postfix_expression ')' '''
-    p[0] = {'type': INT}
+    p[0] = {}
 
 def p_primary_expression_7(p):
     '''primary_expression : IDENTIFIER '(' ')' '''
@@ -174,7 +194,7 @@ def p_primary_expression_8(p):
 
         for i in range(0, argSize):
             if p_id['argTypes'][i] != p[3]['type'][i]:
-                print("Wrong "+ str(i) +"th argument type, expected " + str(p_id['argTypes'][i]) + ", got " + str(p[3]['type'][i]) + " instead "  + "in function " + p_id['name'] + " line " + str(p.lineno(1)))
+                print("Wrong "+ str(i+1) +"th argument type, expected " + str(p_id['argTypes'][i]) + ", got " + str(p[3]['type'][i]) + " instead "  + "in function " + p_id['name'] + " line " + str(p.lineno(1)))
                 raise SyntaxError
             elif p[3]['type'][i] == INT:
                 argType = "i32"
@@ -219,21 +239,41 @@ def p_postfix_expression_2(p):
     p[0]['reg'] = newvar();
     p[0]['idReg'] = p[0]['reg']
     if (p[1]['type'] == ARRAYINT):
-        if ((p[3]['type'] == INT) and (p[3]['val'] >= 0)):
-            p[0]['code'] = p[3]['code'] + p[0]['reg'] +" = getelementptr inbounds [" + p[1]['size'] + " x i32]* " + p[1]['idReg'] +", i64 0, i32 "+ p[3]['reg'] +"\n"
-            p[0]['type'] = INT
-        else:
-            print("Error at line " + str(p.lineno(1))+" : array index should be POSITIVE INT")
-            raise SyntaxError
-    elif (p[1]['type'] == ARRAYFLOAT):      
-        if ((p[3]['type'] == INT) and p[3]['val'] >= 0):
-            p[0]['code'] = p[0]['reg'] +" = getelementptr inbounds [" + p[1]['size'] + " x float]* " + p[1]['idReg'] +", i64 0, float "+ p[3]['val']+"\n"
-            p[0]['type'] = FLOAT
-        else:
-            print("TypeError at line " + str(p.lineno(1)) + " : array index should be POSITIVE INT")
-            raise SyntaxError
+        if 'val' in p[3]:
+            if p[3]['val'] < 0:
+                print("Error : array index should be POSITIVE INT\n")
+                raise SyntaxError
+
+        if ((p[3]['type'] == INT)):
+            if (p[1]['size'] > 0):
+                p[0]['code'] = p[3]['code'] + p[0]['reg'] +" = getelementptr inbounds [" + p[1]['size'] + " x i32]* " + p[1]['idReg'] +", i64 0, i32 "+ p[3]['reg'] +"\n"
+                p[0]['type'] = INT
+            elif (p[1]['size'] == 0): #POOp
+                p[0]['code'] = p[3]['code'] + p[0]['reg'] +" = getelementptr i32* " + p[1]['idReg'] +", i64 0, i32 "+ p[3]['reg'] +"\n"
+                p[0]['type'] = INT
+            else:
+                print("Error : size of array is negative\n")
+                raise SyntaxError            
+
+    elif (p[1]['type'] == ARRAYFLOAT):
+        if 'val' in p[3]:
+            if p[3]['val'] < 0:
+                print("Error : array index should be POSITIVE INT\n")
+                raise SyntaxError
+
+        if ((p[3]['type'] == INT)):
+            if (p[1]['size'] > 0):
+                p[0]['code'] = p[0]['reg'] +" = getelementptr inbounds [" + p[1]['size'] + " x float]* " + p[1]['idReg'] +", i64 0, float "+ p[3]['val']+"\n"
+                p[0]['type'] = FLOAT
+            elif (p[1]['size'] == 0):
+                p[0]['code'] = p[0]['reg'] +" = getelementptr float* " + p[1]['idReg'] +", i64 0, float "+ p[3]['val']+"\n"
+                p[0]['type'] = FLOAT
+            else:
+                print("Error : size of array is negative\n")
+                raise SyntaxError
+
     else:
-        print("TypeError at line " + str(p.lineno(1))+ " : expected ARRAYINT or ARRAYFLOAT got"+ str(p[1]['type']) + "instead")
+        print("TypeError : expected ARRAYINT or ARRAYFLOAT got"+ str(p[1]['type']) + "instead")
         raise SyntaxError
 
 ########################### argument_expression_list ###########################
@@ -300,10 +340,16 @@ def p_multiplicative_expression_2(p):
         p[0]['code'] = p[1]['code'] + p[3]['code'] + p[0]['reg'] + " = fmul float " + p[1]['reg'] + ", " + p[3]['reg'] + "\n"
     elif (p[1]['type'] == INT and p[3]['type'] == FLOAT):
         p[0]['type'] = FLOAT
-        p1 = sitofp(p[1]['reg'])
-        p[0]['code'] = p[1]['code'] + p[3]['code'] + p1[0] + p[0]['reg'] + " = fmul float " + p1[1] + ", " + p[3]['reg'] + "\n"
+        tmp = sitofp(p[1]['reg'])
+        p[0]['code'] = p[1]['code'] + p[3]['code'] + tmp[0] + p[0]['reg'] + " = fmul float " + tmp[1] + ", " + p[3]['reg'] + "\n"
+    elif (p[1]['type'] == FLOAT and p[3]['type'] == INT):
+        p[0]['type'] = FLOAT
+        tmp = sitofp(p[3]['reg'])
+        p[0]['code'] = p[1]['code'] + p[3]['code'] + tmp[0] + p[0]['reg'] + " = fmul float " + p[1]['reg'] + ", " + tmp[1] + "\n"
+
     else:
-        p_error("Not yet valid operation between float and int =P")
+        print "Not yet valid operation between float and int line " + str(p.lineno(2))
+        raise SyntaxError
 
 def p_multiplicative_expression_3(p):
     '''multiplicative_expression : multiplicative_expression '/' unary_expression'''
@@ -315,8 +361,17 @@ def p_multiplicative_expression_3(p):
     elif (p[1]['type'] == FLOAT and p[3]['type'] == FLOAT):
         p[0]['type'] = FLOAT
         p[0]['code'] = p[1]['code'] + p[3]['code'] + p[0]['reg'] + " = fdiv float " + p[1]['reg'] + ", " + p[3]['reg'] + "\n"
+    elif (p[1]['type'] == INT and p[3]['type'] == FLOAT):
+        p[0]['type'] = FLOAT
+        tmp = sitofp(p[1]['reg'])
+        p[0]['code'] = p[1]['code'] + p[3]['code'] + tmp[0] + p[0]['reg'] + " = fdiv float " + tmp[1] + ", " + p[3]['reg'] + "\n"
+    elif (p[1]['type'] == FLOAT and p[3]['type'] == INT):
+        p[0]['type'] = FLOAT
+        tmp = sitofp(p[3]['reg'])
+        p[0]['code'] = p[1]['code'] + p[3]['code'] + tmp[0] + p[0]['reg'] + " = fdiv float " + p[1]['reg'] + ", " + tmp[1] + "\n"
     else:
-        p_error("Not yet valid operation between float and int =P")
+        print "Not yet valid operation between float and int line " + str(p.lineno(2))
+        raise SyntaxError
 
 def p_multiplicative_expression_4(p):
     '''multiplicative_expression : multiplicative_expression '%' unary_expression'''
@@ -328,8 +383,17 @@ def p_multiplicative_expression_4(p):
     elif (p[1]['type'] == FLOAT and p[3]['type'] == FLOAT):
         p[0]['type'] = FLOAT
         p[0]['code'] = p[1]['code'] + p[3]['code'] + p[0]['reg'] + " = frem float " + p[1]['reg'] + ", " + p[3]['reg'] + "\n"
+    # elif (p[1]['type'] == INT and p[3]['type'] == FLOAT):
+    #     p[0]['type'] = FLOAT
+    #     tmp = sitofp(p[1]['reg'])
+    #     p[0]['code'] = p[1]['code'] + p[3]['code'] + tmp[0] + p[0]['reg'] + " = frem float " + tmp[1] + ", " + p[3]['reg'] + "\n"
+    # elif (p[1]['type'] == FLOAT and p[3]['type'] == INT):
+    #     p[0]['type'] = FLOAT
+    #     tmp = sitofp(p[3]['reg'])
+    #     p[0]['code'] = p[1]['code'] + p[3]['code'] + tmp[0] + p[0]['reg'] + " = frem float " + tmp[1] + ", " + p[3]['reg'] + "\n"
     else:
-        p_error("Not yet valid operation between float and int =P")
+        print "Unvalid operation between float and int, expected int and int, line " + str(p.lineno(2))
+        raise SyntaxError
 
 ########################### additive_expression ###########################
 def p_additive_expression_1(p):
@@ -346,8 +410,17 @@ def p_additive_expression_2(p):
     elif (p[1]['type'] == FLOAT and p[3]['type'] == FLOAT):
         p[0]['type'] = FLOAT
         p[0]['code'] = p[1]['code'] + p[3]['code'] + p[0]['reg'] + " = fadd float " + p[1]['reg'] + ", " + p[3]['reg'] + "\n"
+    elif (p[1]['type'] == INT and p[3]['type'] == FLOAT):
+        p[0]['type'] = FLOAT
+        tmp = sitofp(p[1]['reg'])
+        p[0]['code'] = p[1]['code'] + p[3]['code'] + tmp[0] + p[0]['reg'] + " = fadd float " + tmp[1] + ", " + p[3]['reg'] + "\n"
+    elif (p[1]['type'] == FLOAT and p[3]['type'] == INT):
+        p[0]['type'] = FLOAT
+        tmp = sitofp(p[3]['reg'])
+        p[0]['code'] = p[1]['code'] + p[3]['code'] + tmp[0] + p[0]['reg'] + " = fadd float " + p[1]['reg'] + ", " + tmp[1] + "\n"
     else:
-        p_error("Not yet valid operation between float and int =P")
+        print "Not yet valid operation between float and int line " + str(p.lineno(2))
+        raise SyntaxError
 
 def p_additive_expression_3(p):
     '''additive_expression : additive_expression '-' multiplicative_expression'''
@@ -359,8 +432,17 @@ def p_additive_expression_3(p):
     elif (p[1]['type'] == FLOAT and p[3]['type'] == FLOAT):
         p[0]['type'] = FLOAT
         p[0]['code'] = p[1]['code'] + p[3]['code'] + p[0]['reg'] + " = fsub float " + p[1]['reg'] + ", " + p[3]['reg'] + "\n"
+    elif (p[1]['type'] == INT and p[3]['type'] == FLOAT):
+        p[0]['type'] = FLOAT
+        tmp = sitofp(p[1]['reg'])
+        p[0]['code'] = p[1]['code'] + p[3]['code'] + tmp[0] + p[0]['reg'] + " = fsub float " + tmp[1] + ", " + p[3]['reg'] + "\n"
+    elif (p[1]['type'] == FLOAT and p[3]['type'] == INT):
+        p[0]['type'] = FLOAT
+        tmp = sitofp(p[3]['reg'])
+        p[0]['code'] = p[1]['code'] + p[3]['code'] + tmp[0] + p[0]['reg'] + " = fsub float " + p[1]['reg'] + ", " + tmp[1] + "\n"
     else:
-        p_error("Not yet valid operation between float and int =P")
+        print "Not yet valid operation between float and int line " + str(p.lineno(2))
+        raise SyntaxError
 
 ########################### comparison_expression ###########################
 def p_comparison_expression_1(p):
@@ -376,8 +458,17 @@ def p_comparison_expression_2(p):
         p[0]['code'] = p[1]['code'] + p[3]['code'] + p[0]['reg'] + " = icmp slt i32 " + p[1]['reg'] + ", " + p[3]['reg'] + "\n"
     elif (p[1]['type'] == FLOAT and p[3]['type'] == FLOAT):
         p[0]['code'] = p[1]['code'] + p[3]['code'] + p[0]['reg'] + " = fcmp olt float " + p[1]['reg'] + ", " + p[3]['reg'] + "\n"
+    elif (p[1]['type'] == INT and p[3]['type'] == FLOAT):
+        p[0]['type'] = FLOAT
+        tmp = sitofp(p[1]['reg'])
+        p[0]['code'] = p[1]['code'] + p[3]['code'] + tmp[0] + p[0]['reg'] + " = fcmp olt float " + tmp[1] + ", " + p[3]['reg'] + "\n"
+    elif (p[1]['type'] == FLOAT and p[3]['type'] == INT):
+        p[0]['type'] = FLOAT
+        tmp = sitofp(p[3]['reg'])
+        p[0]['code'] = p[1]['code'] + p[3]['code'] + tmp[0] + p[0]['reg'] + " = fcmp olt float " + p[1]['reg'] + ", " + tmp[1] + "\n"
     else:
-        p_error("Not yet valid operation between float and int =P")
+        print "Not yet valid operation between float and int line " + str(p.lineno(2))
+        raise SyntaxError
 
 def p_comparison_expression_3(p):
     '''comparison_expression : additive_expression '>' additive_expression'''
@@ -388,8 +479,17 @@ def p_comparison_expression_3(p):
         p[0]['code'] = p[1]['code'] + p[3]['code'] + p[0]['reg'] + " = icmp sgt i32 " + p[1]['reg'] + ", " + p[3]['reg'] + "\n"
     elif (p[1]['type'] == FLOAT and p[3]['type'] == FLOAT):
         p[0]['code'] = p[1]['code'] + p[3]['code'] + p[0]['reg'] + " = fcmp ogt float " + p[1]['reg'] + ", " + p[3]['reg'] + "\n"
+    elif (p[1]['type'] == INT and p[3]['type'] == FLOAT):
+        p[0]['type'] = FLOAT
+        tmp = sitofp(p[1]['reg'])
+        p[0]['code'] = p[1]['code'] + p[3]['code'] + tmp[0] + p[0]['reg'] + " = fcmp ogt float " + tmp[1] + ", " + p[3]['reg'] + "\n"
+    elif (p[1]['type'] == FLOAT and p[3]['type'] == INT):
+        p[0]['type'] = FLOAT
+        tmp = sitofp(p[3]['reg'])
+        p[0]['code'] = p[1]['code'] + p[3]['code'] + tmp[0] + p[0]['reg'] + " = fcmp ogt float " + p[1]['reg'] + ", " + tmp[1] + "\n"
     else:
-        p_error("Not yet valid operation between float and int =P")
+        print "Not yet valid operation between float and int line " + str(p.lineno(2))
+        raise SyntaxError
 
 def p_comparison_expression_4(p):
     '''comparison_expression : additive_expression LE_OP additive_expression'''
@@ -397,11 +497,20 @@ def p_comparison_expression_4(p):
     p[0]['reg'] = newvar()
     p[0]['type'] = INT
     if (p[1]['type'] == INT and p[3]['type'] == INT):
-        p[0]['code'] = p[1]['code'] + p[3]['code'] + p[0]['reg'] + " = icmp use i32 " + p[1]['reg'] + ", " + p[3]['reg'] + "\n"
+        p[0]['code'] = p[1]['code'] + p[3]['code'] + p[0]['reg'] + " = icmp sle i32 " + p[1]['reg'] + ", " + p[3]['reg'] + "\n"
     elif (p[1]['type'] == FLOAT and p[3]['type'] == FLOAT):
         p[0]['code'] = p[1]['code'] + p[3]['code'] + p[0]['reg'] + " = fcmp ole float " + p[1]['reg'] + ", " + p[3]['reg'] + "\n"
+    elif (p[1]['type'] == INT and p[3]['type'] == FLOAT):
+        p[0]['type'] = FLOAT
+        tmp = sitofp(p[1]['reg'])
+        p[0]['code'] = p[1]['code'] + p[3]['code'] + tmp[0] + p[0]['reg'] + " = fcmp ole float " + tmp[1] + ", " + p[3]['reg'] + "\n"
+    elif (p[1]['type'] == FLOAT and p[3]['type'] == INT):
+        p[0]['type'] = FLOAT
+        tmp = sitofp(p[3]['reg'])
+        p[0]['code'] = p[1]['code'] + p[3]['code'] + tmp[0] + p[0]['reg'] + " = fcmp ole float " + p[1]['reg'] + ", " + tmp[1] + "\n"
     else:
-        p_error("Not yet valid operation between float and int =P")
+        print "Not yet valid operation between float and int line " + str(p.lineno(2))
+        raise SyntaxError
 
 def p_comparison_expression_5(p):
     '''comparison_expression : additive_expression GE_OP additive_expression'''
@@ -412,8 +521,17 @@ def p_comparison_expression_5(p):
         p[0]['code'] = p[1]['code'] + p[3]['code'] + p[0]['reg'] + " = icmp sge i32 " + p[1]['reg'] + ", " + p[3]['reg'] + "\n"
     elif (p[1]['type'] == FLOAT and p[3]['type'] == FLOAT):
         p[0]['code'] = p[1]['code'] + p[3]['code'] + p[0]['reg'] + " = fcmp oge float " + p[1]['reg'] + ", " + p[3]['reg'] + "\n"
+    elif (p[1]['type'] == INT and p[3]['type'] == FLOAT):
+        p[0]['type'] = FLOAT
+        tmp = sitofp(p[1]['reg'])
+        p[0]['code'] = p[1]['code'] + p[3]['code'] + tmp[0] + p[0]['reg'] + " = fcmp oge float " + tmp[1] + ", " + p[3]['reg'] + "\n"
+    elif (p[1]['type'] == FLOAT and p[3]['type'] == INT):
+        p[0]['type'] = FLOAT
+        tmp = sitofp(p[3]['reg'])
+        p[0]['code'] = p[1]['code'] + p[3]['code'] + tmp[0] + p[0]['reg'] + " = fcmp oge float " + p[1]['reg'] + ", " + tmp[1] + "\n"
     else:
-        p_error("Not yet valid operation between float and int =P")
+        print "Not yet valid operation between float and int line " + str(p.lineno(2))
+        raise SyntaxError
 
 def p_comparison_expression_6(p):
     '''comparison_expression : additive_expression EQ_OP additive_expression'''
@@ -424,8 +542,17 @@ def p_comparison_expression_6(p):
         p[0]['code'] = p[1]['code'] + p[3]['code'] + p[0]['reg'] + " = icmp eq i32 " + p[1]['reg'] + ", " + p[3]['reg'] + "\n"
     elif (p[1]['type'] == FLOAT and p[3]['type'] == FLOAT):
         p[0]['code'] = p[1]['code'] + p[3]['code'] + p[0]['reg'] + " = fcmp oeq float " + p[1]['reg'] + ", " + p[3]['reg'] + "\n"
+    elif (p[1]['type'] == INT and p[3]['type'] == FLOAT):
+        p[0]['type'] = FLOAT
+        tmp = sitofp(p[1]['reg'])
+        p[0]['code'] = p[1]['code'] + p[3]['code'] + tmp[0] + p[0]['reg'] + " = fcmp oeq float " + tmp[1] + ", " + p[3]['reg'] + "\n"
+    elif (p[1]['type'] == FLOAT and p[3]['type'] == INT):
+        p[0]['type'] = FLOAT
+        tmp = sitofp(p[3]['reg'])
+        p[0]['code'] = p[1]['code'] + p[3]['code'] + tmp[0] + p[0]['reg'] + " = fcmp oeq float " + p[1]['reg'] + ", " + tmp[1] + "\n"
     else:
-        p_error("Not yet valid operation between float and int =P")
+        print "Not yet valid operation between float and int line " + str(p.lineno(2))
+        raise SyntaxError
 
 def p_comparison_expression_7(p):
     '''comparison_expression : additive_expression NE_OP additive_expression'''
@@ -436,17 +563,30 @@ def p_comparison_expression_7(p):
         p[0]['code'] = p[1]['code'] + p[3]['code'] + p[0]['reg'] + " = icmp ne i32 " + p[1]['reg'] + ", " + p[3]['reg'] + "\n"
     elif (p[1]['type'] == FLOAT and p[3]['type'] == FLOAT):
         p[0]['code'] = p[1]['code'] + p[3]['code'] + p[0]['reg'] + " = fcmp one float " + p[1]['reg'] + ", " + p[3]['reg'] + "\n"
+    elif (p[1]['type'] == INT and p[3]['type'] == FLOAT):
+        p[0]['type'] = FLOAT
+        tmp = sitofp(p[1]['reg'])
+        p[0]['code'] = p[1]['code'] + p[3]['code'] + tmp[0] + p[0]['reg'] + " = fcmp one float " + tmp[1] + ", " + p[3]['reg'] + "\n"
+    elif (p[1]['type'] == FLOAT and p[3]['type'] == INT):
+        p[0]['type'] = FLOAT
+        tmp = sitofp(p[3]['reg'])
+        p[0]['code'] = p[1]['code'] + p[3]['code'] + tmp[0] + p[0]['reg'] + " = fcmp one float " + p[1]['reg'] + ", " + tmp[1] + "\n"
     else:
-        p_error("Not yet valid operation between float and int =P")
+        print "Not yet valid operation between float and int line " + str(p.lineno(2))
+        raise SyntaxError
 
 ########################### expression ###########################
 def p_expression_1(p):
     '''expression : unary_expression assignment_operator comparison_expression'''
     p[0] = {}
     p[0]['reg'] = p[1]['reg']
-    if ((p[1]['type'] == INT) and (p[3]['type'] == INT)) :
-        p[0]['type'] = INT
-        p[0]['code'] = p[1]['code'] + p[3]['code'] + "store i32 " + p[3]['reg'] + ", i32* " + p[1]['idReg'] + "\n"
+    if (p[1]['type'] == INT):
+        if p[3]['type'] == INT:
+            p[0]['type'] = INT
+            p[0]['code'] = p[1]['code'] + p[3]['code'] + "store i32 " + p[3]['reg'] + ", i32* " + p[1]['idReg'] + "\n"
+        elif p[3]['type'] == FLOAT:
+            tmp = fptosi(p[3]['reg'])
+            p[0]['code'] = p[1]['code'] + p[3]['code']+ tmp[0] + "store i32 " + tmp[1] + ", i32* " + p[1]['idReg'] + "\n"
     elif (p[1]['type'] == FLOAT):
         if (p[3]['type'] == FLOAT):
             p[0]['type'] = FLOAT
@@ -490,9 +630,41 @@ def p_assignment_operator_4(p):
 def p_declaration_1(p):
     '''declaration : type_name declarator_list ';' '''
     p[0] = p[2]
+    if 'declarationCode' in p[2]:
+        print "Expected '{' after ')' line " + str(p.lineno(3))
+        raise SyntaxError
 
 def p_declaration_2(p):
     '''declaration : EXTERN type_name declarator_list ';' '''
+    p[0] = p[3]
+    argTypes = ""
+    c = 0;
+
+    if 'arguments' in p[3]:
+        for i in p[3]['argTypes']:
+            c += 1
+            if i == INT:
+                argTypes = argTypes + "i32"
+            elif i == FLOAT:
+                argTypes = argTypes + "float"
+            elif i == VOID:
+                argTypes = argTypes + "void"
+
+            if c != p[3]['arguments']:
+                argTypes = argTypes + ", "
+    else:
+        argTypes = "..."
+
+    if (p[2]['type'] == INT):
+        p[0]['code'] = "declare i32 @" + p[3]['name'] + "(" + argTypes + ")\n"
+    elif (p[2]['type'] == FLOAT):
+        p[0]['code'] = "declare float @" + p[3]['name'] + "(" + argTypes + ")\n"
+    elif (p[2]['type'] == VOID):
+        p[0]['code'] = "declare void @" + p[3]['name'] + "(" + argTypes + ")\n"
+
+    vars[p[3]['name']] = p[0]
+
+
 
 ########################### declarator_list ###########################
 def p_declarator_list_1(p):
@@ -562,6 +734,16 @@ def p_declarator_3(p):
 
 def p_declarator_4(p):
     '''declarator : declarator '[' ']' '''
+    p[0] = {}
+    p[0]['reg'] = newvar()
+    p[0]['size'] = 0
+    if (p[1]['type'] == INT):
+        p[0]['code'] = p[0]['reg']+" = alloca [0 x i32]\n"
+        p[0]['type'] = ARRAYINT
+    elif (p[1]['type'] == FLOAT):
+        p[0]['code'] = p[0]['reg']+" = alloca [0 x float]\n"
+        p[0]['type'] = ARRAYFLOAT
+    vars[p[1]['name']] = p[0]
 
 def p_declarator_5(p):
     '''declarator : declarator '(' parameter_list ')' '''
@@ -576,7 +758,7 @@ def p_declarator_5(p):
         p[0]['code'] = "define i32 @" + p[1]['name'] + "(" + p[3]['code'] + ")"
     elif (p[1]['type'] == FLOAT):
         p[0]['code'] = "define float @" + p[1]['name'] + "(" + p[3]['code'] + ")"
-    elif (p[1]['type'] == INT):
+    elif (p[1]['type'] == VOID):
         p[0]['code'] = "define void @" + p[1]['name'] + "(" + p[3]['code'] + ")"
 
     vars[p[1]['name']] = p[0]
@@ -739,8 +921,7 @@ def p_selection_statement_3(p):
         loopBody = p[7]['code']
 
         # Terminaison de la boucle
-        terminationCode = p[4]['code'] + "br i1 " + p[4]['reg'] + ", label %" + loopLabel + ", label %" + endLabel + "\n" 
-        print p[5]
+        terminationCode = p[4]['code'] + "br i1 " + p[4]['reg'] + ", label %" + loopLabel + ", label %" + endLabel + "\n"
 
 
     p[0]['code'] = p[3]['code'] + "br label %"+ entryLabel + "\n" + entryLabel + ":\nbr label %" + loopLabel + "\n" + loopLabel +":\n" + phiNode + loopBody + incCode + terminationCode + endLabel + ":\n"
@@ -794,19 +975,26 @@ def p_jump_statement_2(p):
     p[0] = {}
     if (p[2]['type'] == INT):
         p[0]['code'] = p[2]['code'] + "ret i32 " + p[2]['reg']
+    elif (p[2]['type'] == FLOAT):
+        p[0]['code'] = p[2]['code'] + "ret float " + p[2]['reg']
+    elif (p[2]['type'] == VOID):
+        print "Wrong return type"
+        exit()
 
 
 ########################### program ###########################
 def p_program_1(p):
     '''program : external_declaration'''
+    global mainCode
     p[0] = p[1]
+    mainCode = mainCode + p[0]['code']
 
 def p_program_2(p):
     '''program : program external_declaration'''
     p[0] = {}
     p[0]['code'] = p[1]['code'] + p[2]['code']
     global mainCode
-    mainCode = p[0]['code']
+    mainCode = mainCode + p[2]['code']
 
 ########################### external_declaration ###########################
 def p_external_declaration_1(p):
@@ -821,12 +1009,14 @@ def p_external_declaration_2(p):
 def p_function_definition_1(p):
     '''function_definition : type_name declarator compound_statement'''
     p[0] = {}
-    p[0]['code'] = p[2]['code'] + "{\n" + p[2]['declarationCode'] + p[3]['code'] + "\n}\n"
     if p[1]['type'] == VOID:
         p[0]['code'] = p[2]['code'] + "{\n" + p[2]['declarationCode'] + p[3]['code'] + "ret void\n}\n"
+    else:
+        p[0]['code'] = p[2]['code'] + "{\n" + p[2]['declarationCode'] + p[3]['code'] + "\n}\n"
 
 def p_error(p):
-    print "Syntax error line %d" % p.lineno
+    print "Syntax error line %d." % p.lineno + " Error : " + str(p)
+    exit()
 
 if __name__ == '__main__':
     import os
@@ -847,10 +1037,13 @@ if __name__ == '__main__':
 
         targetFile.close()
 
-        command1 = "llc "+ baseName +".ll"
-        command2 = "gcc " + baseName + ".o " + " -c " + baseName +".s | gcc -o " + baseName
-        os.system(command1)
-        os.system(command2)
+        if mainCode != "":
+            command1 = "llc "+ baseName +".ll"
+            command2 = "gcc -c " + baseName + ".s " + " -o " +  baseName +".o" 
+            command3 = "gcc " + baseName + ".o -o " + baseName
+            os.system(command1)
+            os.system(command2)
+            os.system(command3)
 
         #print mainCode
 
